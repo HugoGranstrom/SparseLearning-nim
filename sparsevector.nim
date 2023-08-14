@@ -10,11 +10,11 @@ proc `/=`*(v: SparseVector, x: float32) =
   for (index, el) in v.data.mitems:
     el /= x
 
-proc `/`*(v: SparseVector, x: float32): SparseVector =
+#[ proc `/`*(v: SparseVector, x: float32): SparseVector =
   new result
   result.data = v.data
   result.len = v.len
-  result /= x
+  result /= x ]#
 
 proc dot*(v1: SparseVector, v2: Tensor[float32]): float32 =
   assert v1.len == v2.size, &"{v1.len}, {v2.size}"

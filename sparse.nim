@@ -5,9 +5,9 @@ import models
 import ./lsh, ./mnist
 
 let v = newSparseVector(@[0'f32, 1, 2, 0, 4, 0].toTensor)
-echo v[]
+#echo v[]
 
-echo v.dot([1.0'f32, 1, 1, 1, 1, 1].toTensor)
+#echo v.dot([1.0'f32, 1, 1, 1, 1, 1].toTensor)
 
 type
   Linear* = ref object of Layer
@@ -44,6 +44,7 @@ method forward*(lay: Linear, x: QueryVector): SparseVector =
     #indices.add queryIndices
     for ind in queryIndices:
       indices.incl ind
+  #echo indices.len / lay.outputSize 
   # TODO: use multiprobing if we don't reach expectedNodes. (save all fingerprints in a list)
   #echo &"Expected: {expectedNodes}, Found: {indices.len}"
   # Calculate activations
@@ -172,12 +173,12 @@ proc updateTables*(model: Model) =
       for tab in lay.Linear.lshTabs.mitems:
         tab.updateTable()
 
-proc train*(model: Model, x, y, xVal, yVal: Tensor[float32], optimizer: Optimizer, epochs: int, batchSize: int) =
+proc train*(model: Model, x, y, xVal, yVal: Tensor[float32], optimizer: Optimizer, scheduler: LRSchedule, epochs: int, batchSize: int) =
   let nX = x.shape[0]
   var iter = 0
   var nUpdates = 0
-  let n0 = 30
-  let lambda = 1.0
+  let n0 = 10
+  let lambda = 0.5
   var nextTableUpdate = n0
   for epoch in 0 ..< epochs:
     for batchIter in 0 ..< nX div batchSize:
@@ -190,8 +191,10 @@ proc train*(model: Model, x, y, xVal, yVal: Tensor[float32], optimizer: Optimize
         model.backward(bs)
       optimizer.update()
       model.zeroGrad()
+      scheduler.step()
       iter += 1
       if iter == nextTableUpdate:
+        #echo "Updating tables"
         model.updateTables()
         nUpdates += 1
         nextTableUpdate = nextTableUpdate + round(n0.float * exp(lambda * nUpdates.float)).int
@@ -210,15 +213,15 @@ proc train*(model: Model, x, y, xVal, yVal: Tensor[float32], optimizer: Optimize
       # Change to updating the weights on the fly! HOGWILD!
     
     
-
+let (xTrain, yTrain, xTest, yTest) = load_preprocess_mnist()
 
 #randomize()
 
 #[ echo findKL(0.1, 100)
 let lay = newLinear(100, 2000, 0.05)
 let lay2 = newLinear(2000, 2000, 0.05) ]#
-let sparsity = 0.1
-let hidden = 200
+let sparsity = 0.075
+let hidden = 800
 var model = Model()
 model.loss = SoftmaxCrossEntropy()
 model.layers.add newLinear(28*28, hidden, sparsity)
@@ -227,7 +230,14 @@ model.layers.add newLinear(hidden, hidden, sparsity)
 model.layers.add ReLU()
 model.layers.add newLinear(hidden, 10, 1)
 
-let optimizer = newSGD(model, 1e-2, reg=0)
+let epochs = 10
+let bs = 64
+let iters = epochs * xTrain.shape[0] div bs
+
+#let optimizer = newSGD(model, 2e-2, reg=0)
+let optimizer = newAdamW(model, lr=1e-4, reg=1e-2)
+
+let scheduler = newOneCycle(optimizer, maxLR=3e-4'f32, divFactor=25'f32, cycleLength=iters)
 
 #[ let N = 10000
 let x = randomTensor[float32]([N, 2], -50'f32..50'f32) + randomNormalTensor[float32]([N, 2], 0, 0.1)
@@ -241,13 +251,11 @@ let y = w1 * x[_, 0] + w2 * x[_, 1] +. b #+ sin(x[_, 0]) ]#
 echo model.layers[0].weights["w"]
 echo model.layers[0].weights["b"] ]#
 
-let (xTrain, yTrain, xTest, yTest) = load_preprocess_mnist()
+
 
 #timeIt "Train 10 epochs":
 
-echo model.layers[0].weights["w"].mean()
-
-model.train(xTrain, yTrain, xTest, yTest, optimizer, epochs=10, batchSize=64)
+model.train(xTrain, yTrain, xTest, yTest, optimizer, scheduler, epochs=epochs, batchSize=bs)
 
 #echo "After:"
 echo model.layers[0].weights["w"].mean()

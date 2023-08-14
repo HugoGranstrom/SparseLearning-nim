@@ -104,24 +104,32 @@ proc train*(model: Model, x, y, xVal, yVal: Tensor[float32], optimizer: Optimize
       model.backward()
       optimizer.update()
       model.zeroGrad()
-    let predVal = model.forward(xVal)
+    #[ let predVal = model.forward(xVal)
     let lossVal = model.loss.forward(predVal, yVal)
     let predInd = predVal.argmax(axis=1)
     let trueInd = yVal.argmax(axis=1)
     let accuracy = mean((predInd ==. trueInd).asType(float32))
-    echo &"Epoch {epoch}: val loss = {lossVal:.2f}, val acc = {accuracy:.2f}, train loss = {train_loss / nBatches.float32:.2f}"
+    echo &"Epoch {epoch}: val loss = {lossVal:.2f}, val acc = {accuracy:.2f}, train loss = {train_loss / nBatches.float32:.2f}" ]#
 
-let hidden = 200
+let hidden = 1000
 var model = Model()
 model.loss = SoftmaxCrossEntropy()
 model.layers.add newLinear(28*28, hidden)
 model.layers.add ReLU()
 model.layers.add newLinear(hidden, hidden)
 model.layers.add ReLU()
+model.layers.add newLinear(hidden, hidden)
+model.layers.add ReLU()
+model.layers.add newLinear(hidden, hidden)
+model.layers.add ReLU()
+model.layers.add newLinear(hidden, hidden)
+model.layers.add ReLU()
 model.layers.add newLinear(hidden, 10)
 
 
-let optimizer = newSGD(model, 1e-3, reg=0)
+#let optimizer = newSGD(model, 1e-4, reg=0)
+let optimizer = newAdamW(model, lr=1e-4*0, reg=0)
+
 
 #[ let N = 10000
 let x = randomTensor[float32]([N, 2], -50'f32..50'f32) + randomNormalTensor[float32]([N, 2], 0, 0.1)
@@ -141,7 +149,7 @@ echo model.layers[0].weights["b"] ]#
 let (xTrain, yTrain, xTest, yTest) = load_preprocess_mnist()
 
 #timeIt "Train 1 epoch":
-model.train(xTrain, yTrain, xTest, yTest, optimizer, epochs=5, batchSize=64)
+model.train(xTrain, yTrain, xTest, yTest, optimizer, epochs=1, batchSize=64*10*2)
 
 echo "After:"
 echo model.layers[0].weights["w"].mean()
