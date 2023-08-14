@@ -54,9 +54,9 @@ proc `/=`(v: var QueryVector, x: float32) =
 proc lshProjection*(p: QueryVector, a: Tensor[float32]): bool =
   var x =
     if p.isDense:
-      p.dense.dot(a[0..^2])
+      p.dense.dot(a)
     else:
-      p.sparse.dot(a[0..^2])
+      p.sparse.dot(a)
   x += p.lshEl * a[a.size.int-1]
   result = not signbit(x)
 
@@ -117,7 +117,7 @@ proc initLSHTable*(vectors: Tensor[float32], k: int): LSHTable =
   result.vectors = vectors
   result.k = k
   # TODO: handle k = 0 (dense output)
-  result.randomVectors = randomNormalTensor[float32]([k, vectors.shape[1] + 1], 0, 1)
+  result.randomVectors = randomNormalTensor[float32]([k, vectors.shape[1]], 0, 1)
   result.buckets = newSeq[seq[int]](2^k)
   result.updateTable()
 
