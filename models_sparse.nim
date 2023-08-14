@@ -51,6 +51,10 @@ type
 
 # Linear
 
+# flip the dimensions of the weight matrix such that the weight vectors are continous in memory!
+# This should give us faster dot products as well!
+
+
 proc forwardLinear*(lay: var Layer, x: QueryVector): SparseVector =
   # Find most probable winning activations
   # Vanilla sampling, pick random tables until we get enough nodes or have picked all
@@ -79,10 +83,10 @@ proc forwardLinear*(lay: var Layer, x: QueryVector): SparseVector =
     result.data[i].index = index
     let wx =
       if x.isDense:
-        dot(x.dense, weights[_, index].squeeze)
+        dot(x.dense, weights[index, _].squeeze)
       else:
-        dot(x.sparse, weights[_, index].squeeze)
-    result.data[i].el = wx + bias[0, index]
+        dot(x.sparse, weights[index, _].squeeze)
+    result.data[i].el = wx + bias[index]
     i += 1
   lay.input = if x.isDense: newSparseVector(x.dense) else: x.sparse
   lay.output = result
@@ -100,14 +104,14 @@ proc backwardLinearUnsafe*(lay: var Layer, deriv: SparseVector): SparseVector =
   var wGradBuffer = weightGrad.toUnsafeView
   for (outIndex, deriv) in deriv.data:
     # Update bias
-    biasGrad[0, outIndex] += deriv
+    biasGrad[outIndex] += deriv
   
   # Update weight
   # flip loop order for memory efficiency:
-  for (inIndex, inValue) in lay.input.data.mitems:
-    for (outIndex, deriv) in deriv.data:
+  for (outIndex, deriv) in deriv.data:
+    for (inIndex, inValue) in lay.input.data.mitems:
       #weightGrad[inIndex, outIndex] += inValue * deriv
-      wGradBuffer[inIndex * weightWidth + outIndex] += inValue * deriv
+      wGradBuffer[outIndex * weightWidth + inIndex] += inValue * deriv
   
   result = newSparseVector(lay.inputSize, lay.input.data.len)
   let weights = lay.weights["w"]
@@ -117,10 +121,10 @@ proc backwardLinearUnsafe*(lay: var Layer, deriv: SparseVector): SparseVector =
     var el: float32
     for (outIndex, deriv) in deriv.data:
       #result.data[i].el += deriv * weights[inIndex, outIndex]
-      el += deriv * wBuffer[inIndex * weightWidth + outIndex]
+      el += deriv * wBuffer[outIndex * weightWidth + inIndex]
     result.data[i].el = el
 
-proc backwardLinear*(lay: var Layer, deriv: SparseVector): SparseVector =
+#[ proc backwardLinear*(lay: var Layer, deriv: SparseVector): SparseVector =
   # no batching, yippie! 
   # y1 = x1*w1 + x2*w2 + b
   # dy1/dw1 = x1 (once!)
@@ -144,7 +148,7 @@ proc backwardLinear*(lay: var Layer, deriv: SparseVector): SparseVector =
   for i, (inIndex, inValue) in lay.input.data.mpairs:
     result.data[i].index = inIndex
     for (outIndex, deriv) in deriv.data:
-      result.data[i].el += deriv * weights[inIndex, outIndex]
+      result.data[i].el += deriv * weights[inIndex, outIndex] ]#
 
 proc findKL*(s, d: float32, c1: float32 = 1, c2: float32 = 0.1): tuple[k, l: int] =
   let startK = ceil(log2(1/(c1*s))).int
@@ -162,15 +166,15 @@ proc newLinear*(inputSize, outputSize: int, sparsity: float32, denseOutput=false
   result.inputSize = inputSize
   result.outputSize = outputSize
   result.sparsity = sparsity
-  result.weights["w"] = randomNormalTensor[float32]([inputSize, outputSize], 0, sqrt(2 / (inputSize + outputSize)))
-  result.weights["b"] = randomNormalTensor[float32]([1, outputSize], 0, sqrt(2 / (inputSize + outputSize)))
+  result.weights["w"] = randomNormalTensor[float32]([outputSize, inputSize], 0, sqrt(2 / (inputSize + outputSize)))
+  result.weights["b"] = randomNormalTensor[float32]([outputSize], 0, sqrt(2 / (inputSize + outputSize)))
   result.gradients["w"] = zeros_like(result.weights["w"])
   result.gradients["b"] = zeros_like(result.weights["b"])
   let (k, l) = findKL(sparsity, outputSize.float32)
   echo "k: ", k, " L: ", l
   # Create L hash tables with K bits each
   for i in 0 ..< l:
-    result.lshTabs.add initLSHTable(result.weights["w"].transpose, k=k)
+    result.lshTabs.add initLSHTable(result.weights["w"], k=k)
 
 # ReLU
 
